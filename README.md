@@ -157,9 +157,7 @@ Scatter plots for different models show the distribution of predicted values aga
    ![KNN Scatter Plot](Scatter%20Plots/knn_scatter.png)
 
 3. Lasso Scatter Plot
-   ![Lasso
-
- Scatter Plot](Scatter%20Plots/lasso_scatter.png)
+   ![Lasso Scatter Plot](Scatter%20Plots/lasso_scatter.png)
 
 4. LightGBM Scatter Plot
    ![LightGBM Scatter Plot](Scatter%20Plots/lightgbm_scatter.png)
