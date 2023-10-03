@@ -93,7 +93,20 @@ Histograms of residuals for different models provide insights into the distribut
 3. Lasso Residual Histogram
    ![Lasso Residual Histogram](Histogram/lasso_residuals_histogram.png)
 
-4. ...
+4. LightGBM Residual Histogram
+   ![LightGBM Residual Histogram](Histogram/lgbm_residuals_histogram.png)
+
+5. MLP Residual Histogram
+   ![MLP Residual Histogram](Histogram/mlp_residuals_histogram.png)
+
+6. Random Forest Residual Histogram
+   ![Random Forest Residual Histogram](Histogram/rf_residuals_histogram.png)
+
+7. Ridge Residual Histogram
+   ![Ridge Residual Histogram](Histogram/ridge_residuals_histogram.png)
+
+8. SVM Residual Histogram
+   ![SVM Residual Histogram](Histogram/svm_residuals_histogram.png)
 
 9. XGBoost Residual Histogram
    ![XGBoost Residual Histogram](Histogram/xgb_residuals_histogram.png)
@@ -113,7 +126,20 @@ Residual plots for different models help visualize the relationship between pred
 3. Lasso Residual Plot
    ![Lasso Residual Plot](Residual%20Plots/lasso_residual_plot.png)
 
-4. ...
+4. LightGBM Residual Plot
+   ![LightGBM Residual Plot](Residual%20Plots/lgbm_residual_plot.png)
+
+5. MLP Residual Plot
+   ![MLP Residual Plot](Residual%20Plots/mlp_residual_plot.png)
+
+6. Random Forest Residual Plot
+   ![Random Forest Residual Plot](Residual%20Plots/rf_residual_plot.png)
+
+7. Ridge Residual Plot
+   ![Ridge Residual Plot](Residual%20Plots/ridge_residual_plot.png)
+
+8. SVM Residual Plot
+   ![SVM Residual Plot](Residual%20Plots/svm_residual_plot.png)
 
 9. XGBoost Residual Plot
    ![XGBoost Residual Plot](Residual%20Plots/xgb_residual_plot.png)
@@ -131,9 +157,24 @@ Scatter plots for different models show the distribution of predicted values aga
    ![KNN Scatter Plot](Scatter%20Plots/knn_scatter.png)
 
 3. Lasso Scatter Plot
-   ![Lasso Scatter Plot](Scatter%20Plots/lasso_scatter.png)
+   ![Lasso
 
-4. ...
+ Scatter Plot](Scatter%20Plots/lasso_scatter.png)
+
+4. LightGBM Scatter Plot
+   ![LightGBM Scatter Plot](Scatter%20Plots/lightgbm_scatter.png)
+
+5. MLP Scatter Plot
+   ![MLP Scatter Plot](Scatter%20Plots/mlp_scatter.png)
+
+6. Random Forest Scatter Plot
+   ![Random Forest Scatter Plot](Scatter%20Plots/rf_scatter.png)
+
+7. Ridge Scatter Plot
+   ![Ridge Scatter Plot](Scatter%20Plots/ridge_scatter.png)
+
+8. SVM Scatter Plot
+   ![SVM Scatter Plot](Scatter%20Plots/svm_scatter.png)
 
 9. XGBoost Scatter Plot
    ![XGBoost Scatter Plot](Scatter%20Plots/xgb_scatter.png)
