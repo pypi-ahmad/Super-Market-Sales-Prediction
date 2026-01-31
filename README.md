@@ -1,196 +1,66 @@
-# Super Market Sales Prediction
+# Universal Forecasting Lab 🔮
 
-> A machine learning project for predicting super market sales using various regression models.
+[![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=Streamlit&logoColor=white)](https://streamlit.io/)
+[![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![FLAML](https://img.shields.io/badge/FLAML-Microsoft-blue?style=for-the-badge)](https://github.com/microsoft/FLAML)
+[![Plotly](https://img.shields.io/badge/Plotly-3F4F75?style=for-the-badge&logo=plotly&logoColor=white)](https://plotly.com/)
 
----
+A comprehensive, interactive research lab for time-series forecasting. This tool democratizes AI by allowing anyone to upload sales data and automatically train state-of-the-art machine learning models (XGBoost, LightGBM, Random Forest) using Microsoft's FLAML.
 
-## Table of Contents
+## 📋 Executive Summary
+The **Universal Forecasting Lab** transforms raw CSV data into actionable insights. It handles the complexity of data science—preprocessing, feature engineering, model selection, and hyperparameter tuning—automatically. 
 
-- [Description](#description)
-- [How to Use](#how-to-use)
-- [Models and Evaluation](#models-and-evaluation)
-- [Histogram](#histogram)
-- [Residual Plots](#residual-plots)
-- [Scatter Plots](#scatter-plots)
-- [Installation](#installation)
-- [Contributing](#contributing)
-- [License](#license)
+Whether you are predicting supermarket sales, stock prices, or website traffic, this lab provides a "Deep Data Scan" to understand your data and a "Model Arena" to find the most accurate algorithm for your specific problem.
 
----
+## ✨ Key Features
 
-## Description
+### 🚀 AutoML Engine
+Powered by **Microsoft FLAML**, the engine automatically:
+- Engineers features (Lags, Rolling Means, Date Parts).
+- Tests multiple algorithms (LGBM, XGBoost, ExtraTrees).
+- Optimizes hyperparameters for the best RMSE.
 
-The "Super Market Sales Prediction" project is a machine learning-based application that predicts super market sales based on various features such as branch, city, customer type, gender, product line, unit price, quantity, tax, cost of goods sold, gross income, and customer rating. This project demonstrates the use of multiple regression algorithms to make sales predictions.
+### 📊 Deep EDA (Exploratory Data Analysis)
+Understand your data before you model it:
+- **Decomposition**: Automatically separates Trend, Seasonality, and Noise.
+- **Autocorrelation**: Visualizes lag dependencies (ACF/PACF).
+- **Correlation Heatmaps**: Identifies key drivers of your target variable.
 
-Key features of the project include:
-- Preprocessing and encoding of categorical features.
-- Training and evaluation of different regression models.
-- Visualization of model performance.
+### ⚔️ Model Battle
+See exactly what happened behind the scenes:
+- **Leaderboard**: A transparent ranking of all models tried.
+- **Feature Importance**: Discover which variables matter most (e.g., "Is 'Hour' more important than 'Month'?").
+- **Training History**: Visualize the loss minimization curve.
 
----
+### 🔮 Future Forecast
+- **Interactive Scenario Planning**: Use a slider to forecast 1-30 days ahead.
+- **Recursive Forecasting**: Automatically generates future features to project trajectories.
 
-## How to Use
+## 🛠️ Quick Start
 
-To use this project, follow these steps:
+### 1. Installation
+Clone the repository and install the dependencies.
+```bash
+pip install -r requirements.txt
+```
 
-1. Clone the repository to your local machine:
+### 2. Train Demo Models
+Run the training script to verify the installation and generate the initial model bundle using the included `supermarket_sales.csv`.
+```bash
+python train_forecast.py
+```
 
-   ```shell
-   git clone https://github.com/pypi-ahmad/Super-Market-Sales-Prediction.git
-   ```
+### 3. Launch the Lab
+Start the interactive dashboard.
+```bash
+streamlit run app.py
+```
 
-2. Install the required dependencies:
-
-   ```shell
-   pip install -r requirements.txt
-   ```
-
-3. Run the Flask application:
-
-   ```shell
-   python app.py
-   ```
-
-4. Open a web browser and go to `http://localhost:5000` to access the prediction form.
-
-5. Select a regression model, enter the required input values, and click "Predict."
-
-6. View the prediction results on the next page.
-
----
-
-## Models and Evaluation
-
-The project utilizes various regression models, including:
-- XGBoost Regressor
-- Support Vector Machine (SVM)
-- Ridge Regression
-- Random Forest Regressor
-- MLP Regressor
-- LightGBM Regressor
-- Lasso Regression
-- K-Nearest Neighbors (KNN)
-- CatBoost Regressor
-
-Model performance is evaluated using metrics such as Mean Absolute Error (MAE) and Root Mean Squared Error (RMSE).
-
-![Comparison of MAE Values for Different Models](Comparison%20of%20MAE%20Values%20for%20Different%20Models.png)
-
-![Comparison of RMSE Values for Different Models](Comparison%20of%20RMSE%20Values%20for%20Different%20Models.png)
+## 📂 Project Structure
+- `app.py`: The Streamlit dashboard application.
+- `train_forecast.py`: The core `ForecastingEngine` class and training logic.
+- `supermarket_sales.csv`: Demo dataset.
+- `requirements.txt`: Project dependencies.
 
 ---
-
-## Histogram
-
-Histograms of residuals for different models provide insights into the distribution of prediction errors.
-
-1. CatBoost Residual Histogram
-   ![CatBoost Residual Histogram](Histogram/catboost_residuals_histogram.png)
-
-2. KNN Residual Histogram
-   ![KNN Residual Histogram](Histogram/knn_residuals_histogram.png)
-
-3. Lasso Residual Histogram
-   ![Lasso Residual Histogram](Histogram/lasso_residuals_histogram.png)
-
-4. LightGBM Residual Histogram
-   ![LightGBM Residual Histogram](Histogram/lgbm_residuals_histogram.png)
-
-5. MLP Residual Histogram
-   ![MLP Residual Histogram](Histogram/mlp_residuals_histogram.png)
-
-6. Random Forest Residual Histogram
-   ![Random Forest Residual Histogram](Histogram/rf_residuals_histogram.png)
-
-7. Ridge Residual Histogram
-   ![Ridge Residual Histogram](Histogram/ridge_residuals_histogram.png)
-
-8. SVM Residual Histogram
-   ![SVM Residual Histogram](Histogram/svm_residuals_histogram.png)
-
-9. XGBoost Residual Histogram
-   ![XGBoost Residual Histogram](Histogram/xgb_residuals_histogram.png)
-
----
-
-## Residual Plots
-
-Residual plots for different models help visualize the relationship between predicted and actual values.
-
-1. CatBoost Residual Plot
-   ![CatBoost Residual Plot](Residual%20Plots/catboost_residual_plot.png)
-
-2. KNN Residual Plot
-   ![KNN Residual Plot](Residual%20Plots/knn_residual_plot.png)
-
-3. Lasso Residual Plot
-   ![Lasso Residual Plot](Residual%20Plots/lasso_residual_plot.png)
-
-4. LightGBM Residual Plot
-   ![LightGBM Residual Plot](Residual%20Plots/lgbm_residual_plot.png)
-
-5. MLP Residual Plot
-   ![MLP Residual Plot](Residual%20Plots/mlp_residual_plot.png)
-
-6. Random Forest Residual Plot
-   ![Random Forest Residual Plot](Residual%20Plots/rf_residual_plot.png)
-
-7. Ridge Residual Plot
-   ![Ridge Residual Plot](Residual%20Plots/ridge_residual_plot.png)
-
-8. SVM Residual Plot
-   ![SVM Residual Plot](Residual%20Plots/svm_residual_plot.png)
-
-9. XGBoost Residual Plot
-   ![XGBoost Residual Plot](Residual%20Plots/xgb_residual_plot.png)
-
----
-
-## Scatter Plots
-
-Scatter plots for different models show the distribution of predicted values against actual values.
-
-1. CatBoost Scatter Plot
-   ![CatBoost Scatter Plot](Scatter%20Plots/catboost_scatter.png)
-
-2. KNN Scatter Plot
-   ![KNN Scatter Plot](Scatter%20Plots/knn_scatter.png)
-
-3. Lasso Scatter Plot
-   ![Lasso Scatter Plot](Scatter%20Plots/lasso_scatter.png)
-
-4. LightGBM Scatter Plot
-   ![LightGBM Scatter Plot](Scatter%20Plots/lightgbm_scatter.png)
-
-5. MLP Scatter Plot
-   ![MLP Scatter Plot](Scatter%20Plots/mlp_scatter.png)
-
-6. Random Forest Scatter Plot
-   ![Random Forest Scatter Plot](Scatter%20Plots/rf_scatter.png)
-
-7. Ridge Scatter Plot
-   ![Ridge Scatter Plot](Scatter%20Plots/ridge_scatter.png)
-
-8. SVM Scatter Plot
-   ![SVM Scatter Plot](Scatter%20Plots/svm_scatter.png)
-
-9. XGBoost Scatter Plot
-   ![XGBoost Scatter Plot](Scatter%20Plots/xgb_scatter.png)
-
----
-
-## Installation
-
-To run this project locally, ensure you have Python and Git installed. Follow the steps in the "How to Use" section above.
-
----
-
-## Contributing
-
-Contributions are welcome! If you would like to contribute to this project, please fork the repository and create a pull request. Feel free to open issues for bug reports or feature requests.
-
----
-
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+*Built with ❤️ for Data Science enthusiasts.*
