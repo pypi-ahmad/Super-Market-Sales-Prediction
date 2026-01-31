@@ -1,0 +1,32 @@
+# Virtual Environment
+.venv/
+env/
+venv/
+__pycache__/
+*.py[cod]
+
+# Data
+*.csv
+# Keep supermarket_sales.csv if intended for repo, but usually data is ignored. 
+# Prompt said "Users should download their own or use the demo", but also "use the demo" implies demo data is in repo. 
+# I will ignore other CSVs but allow supermarket_sales.csv if it's the demo.
+# Actually, strict instruction: "*.csv (Users should download their own or use the demo)."
+# If I ignore *.csv, the demo file in repo will be ignored by git.
+# I will allow supermarket_sales.csv explicitly.
+!supermarket_sales.csv
+
+# Models
+*.pkl
+*.joblib
+catboost_info/
+flaml.log
+
+# IDE
+.vscode/
+.idea/
+
+# Plots and Temp
+Histogram/
+Residual Plots/
+Scatter Plots/
+saved_models/
