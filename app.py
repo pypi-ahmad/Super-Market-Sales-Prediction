@@ -1,340 +1,463 @@
-"""
-Universal Forecasting Lab 🔮
-A Streamlit dashboard for interactive time-series analysis and forecasting.
-Powered by the ForecastingEngine (FLAML).
-"""
-
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-import joblib
-import os
 import numpy as np
-from statsmodels.tsa.seasonal import seasonal_decompose
-import statsmodels.api as sm
-from train_forecast import ForecastingEngine
+import plotly.express as px
+import os
+import pickle
+import time
+import matplotlib.pyplot as plt
 
-# --- Page Config ---
-st.set_page_config(page_title="Research Lab Dashboard", page_icon="🔬", layout="wide")
+# Try importing SHAP, handle if missing
+try:
+    import shap
+    SHAP_AVAILABLE = True
+except ImportError:
+    SHAP_AVAILABLE = False
 
-# --- CSS Styling ---
-# Dark mode enhancements for a professional look
-st.markdown("""
-<style>
-    .stApp { background-color: #0E1117; color: #FAFAFA; }
-    .stMetric { background-color: #262730; padding: 15px; border-radius: 10px; }
-    h1, h2, h3 { color: #00ADB5; }
-    .stTabs [data-baseweb="tab-list"] { gap: 24px; }
-    .stTabs [data-baseweb="tab"] { height: 50px; white-space: pre-wrap; background-color: #262730; border-radius: 4px; color: #fff; } 
-    .stTabs [aria-selected="true"] { background-color: #00ADB5; }
-</style>
-""", unsafe_allow_html=True)
+from flaml import AutoML
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+
+# --- Configuration ---
+st.set_page_config(
+    page_title="Supermarket Sales AI Command Center",
+    page_icon="🛒",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Constants
+MODEL_FILE = 'automl_model.pkl'
 
 # --- Helper Functions ---
-@st.cache_resource
-def load_bundle(filename='automl_bundle.pkl'):
-    """Loads the trained model bundle from disk safely."""
-    if os.path.exists(filename):
-        try:
-            return joblib.load(filename)
-        except:
-            return None
+@st.cache_data
+def load_data(file):
+    if file.name.endswith('.csv'):
+        return pd.read_csv(file)
+    else:
+        return pd.read_excel(file)
+
+def get_column_metadata(df):
+    """Generate metadata for dynamic inputs."""
+    metadata = {}
+    for col in df.columns:
+        if df[col].dtype == 'object':
+            metadata[col] = {
+                'type': 'categorical',
+                'options': sorted(df[col].unique().astype(str).tolist())
+            }
+        elif pd.api.types.is_numeric_dtype(df[col]):
+            metadata[col] = {
+                'type': 'numeric',
+                'min': float(df[col].min()),
+                'max': float(df[col].max()),
+                'mean': float(df[col].mean())
+            }
+    return metadata
+
+def save_model(automl, features, metadata, metrics, config):
+    artifacts = {
+        'model': automl,
+        'features': features,
+        'column_metadata': metadata,
+        'metrics': metrics,
+        'config': config
+    }
+    with open(MODEL_FILE, 'wb') as f:
+        pickle.dump(artifacts, f)
+
+def load_pretrained_model():
+    if os.path.exists(MODEL_FILE):
+        with open(MODEL_FILE, 'rb') as f:
+            return pickle.load(f)
     return None
 
-def train_model(df, date_col, target_col, time_budget):
-    """Initializes and runs the ForecastingEngine."""
-    # Reset session state bundle to force reload after training
-    if 'bundle' in st.session_state:
-        del st.session_state['bundle']
-        
-    engine = ForecastingEngine(time_budget=time_budget)
-    engine.preprocess(df, date_col, target_col)
-    engine.train()
-    engine.save('automl_bundle.pkl')
-    return engine
+# --- Main App ---
+def main():
+    st.title("🛒 Supermarket Sales AI Command Center")
+    st.markdown("### Full-Stack AutoML & Analytics Platform")
 
-# --- Sidebar ---
-st.sidebar.title("🔬 Research Lab")
-data_source = st.sidebar.radio("Data Source", ["Use Demo Data", "Upload CSV"])
-
-df = None
-date_col = 'Date'
-target_col = 'Total'
-
-if data_source == "Use Demo Data":
-    if os.path.exists("supermarket_sales.csv"):
-        df = pd.read_csv("supermarket_sales.csv")
-        # Ensure correct defaults for demo data
-        date_col = 'Date'
-        target_col = 'Total'
-    else:
-        st.error("supermarket_sales.csv not found! Please upload data.")
-else:
-    uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
-    if uploaded_file:
-        df = pd.read_csv(uploaded_file)
-        cols = df.columns.tolist()
-        date_col = st.sidebar.selectbox("Select Date Column", cols, index=0)
-        target_col = st.sidebar.selectbox("Select Target Column", cols, index=min(1, len(cols)-1))
-
-time_budget = st.sidebar.slider("Time Budget (s)", 10, 300, 30)
-train_btn = st.sidebar.button("🚀 Start Experiment")
-
-if train_btn and df is not None:
-    with st.spinner(f"Running Experiment (Budget: {time_budget}s)..."):
-        try:
-            # Clear cache to ensure fresh run
-            load_bundle.clear()
-            engine = train_model(df, date_col, target_col, time_budget)
-            st.success("Experiment Complete! Analysis Ready.")
-            # Reload bundle
-            st.session_state.bundle = load_bundle()
-            st.rerun()
-        except Exception as e:
-            st.error(f"Training failed: {e}")
-
-# Load bundle from disk if not in session
-if 'bundle' not in st.session_state or st.session_state.bundle is None:
-    st.session_state.bundle = load_bundle()
-
-# --- Main Dashboard ---
-if st.session_state.bundle:
-    bundle = st.session_state.bundle
+    # --- Sidebar Configuration ---
+    st.sidebar.header("🔧 Configuration")
     
-    # Retrieve components from the bundle
-    leaderboard = bundle.get('leaderboard')
-    feature_importance = bundle.get('feature_importance')
-    metrics = bundle.get('metrics')
-    automl = bundle.get('best_model')
-    test_data = bundle.get('data')['test']
-    feature_cols = bundle.get('data')['feature_cols']
-    train_target_col = bundle.get('data')['target_col']
-    
-    # Retrieve the engine instance for data access
-    engine_instance = bundle.get('class_instance')
-    if engine_instance:
-        df_processed = engine_instance.df_processed
-        processed_date_col = engine_instance.date_col
-        processed_target_col = engine_instance.target_col
-    else:
-        st.error("Model bundle is incomplete. Please retrain.")
-        st.stop()
+    data_source = st.sidebar.radio(
+        "Data Source",
+        ["Use Pre-trained Model", "Train on New Data"],
+        help="Choose between using the existing model or training a new one."
+    )
 
-    st.title(f"Research Lab: {processed_target_col} Prediction")
-    
-    # Four main tabs for the analytics workflow
+    # State Management for Data and Model
+    if 'active_model' not in st.session_state:
+        st.session_state.active_model = None
+    if 'active_meta' not in st.session_state:
+        st.session_state.active_meta = None
+    if 'data_df' not in st.session_state:
+        st.session_state.data_df = None
+
+    # Logic based on Data Source
+    if data_source == "Use Pre-trained Model":
+        artifacts = load_pretrained_model()
+        if artifacts:
+            st.session_state.active_model = artifacts['model']
+            st.session_state.active_meta = artifacts
+            st.sidebar.success(f"Loaded Model: {artifacts['config'].get('app_title', 'Unknown')}")
+            
+            # Try to load default data for EDA/SHAP if available
+            if os.path.exists("supermarket_sales.csv"):
+                # Load lazily or check if already loaded
+                if st.session_state.data_df is None:
+                    st.session_state.data_df = pd.read_csv("supermarket_sales.csv")
+        else:
+            st.sidebar.error(f"No pre-trained model found at {MODEL_FILE}")
+            
+    else: # Train on New Data
+        uploaded_file = st.sidebar.file_uploader("Upload Dataset (CSV/Excel)", type=['csv', 'xlsx'])
+        if uploaded_file:
+            try:
+                # Basic check to avoid reloading same file
+                if st.session_state.data_df is None:
+                     df = load_data(uploaded_file)
+                     st.session_state.data_df = df
+                     st.sidebar.success(f"Uploaded: {uploaded_file.name} ({len(df)} rows)")
+            except Exception as e:
+                st.sidebar.error(f"Error loading file: {e}")
+
+    # --- Tabs ---
     tab1, tab2, tab3, tab4 = st.tabs([
-        "📊 Deep Data Scan", 
-        "⚔️ Model Arena", 
-        "🔍 Diagnostics", 
-        "🔮 Future Forecast"
+        "🔍 Data Explorer", 
+        "⚙️ AutoML Training Lab", 
+        "🛒 Sales Simulator", 
+        "🧠 Model Explainability"
     ])
 
-    # --- Tab 1: Deep Data Scan (EDA) ---
+    # --- Tab 1: Data Explorer ---
     with tab1:
-        st.header("Deep Data Scan")
-        st.markdown("Automatic exploration of time-series properties.")
+        st.header("🔍 Data Explorer")
+        df = st.session_state.data_df
         
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("Time Series Decomposition")
-            try:
-                # Use processed data which is already aggregated by date
-                ts_data = df_processed.set_index(processed_date_col)[processed_target_col]
-                
-                if len(ts_data) > 14:
-                    # Decompose into Trend, Seasonality, and Residuals (Period=7 for weekly seasonality)
-                    decomp = seasonal_decompose(ts_data, model='additive', period=7)
-                    
-                    fig_trend = px.line(x=ts_data.index, y=decomp.trend, title="Trend Component")
-                    fig_trend.update_layout(template="plotly_dark")
-                    st.plotly_chart(fig_trend, width='stretch')
-                    
-                    fig_season = px.line(x=ts_data.index, y=decomp.seasonal, title="Seasonal Component")
-                    fig_season.update_layout(template="plotly_dark")
-                    st.plotly_chart(fig_season, width='stretch')
-                else:
-                    st.warning("Not enough data for decomposition (need > 14 points).")
-            except Exception as e:
-                st.error(f"Decomposition failed: {e}")
-
-        with col2:
-            st.subheader("Correlation Heatmap")
-            # Analyze relationships between numerical features
-            numeric_df = df_processed.select_dtypes(include=[np.number])
-            corr = numeric_df.corr()
-            fig_corr = px.imshow(corr, text_auto=True, color_continuous_scale='RdBu_r', title="Feature Correlation")
-            fig_corr.update_layout(template="plotly_dark")
-            st.plotly_chart(fig_corr, width='stretch')
-
-        st.subheader("Autocorrelation Analysis")
-        try:
-            ts_values = df_processed[processed_target_col].values
-            # ACF (AutoCorrelation Function) - Direct correlation with lags
-            acf_values = sm.tsa.acf(ts_values, nlags=20)
-            fig_acf = px.bar(x=list(range(len(acf_values))), y=acf_values, title="Autocorrelation (ACF)")
-            fig_acf.update_layout(template="plotly_dark", xaxis_title="Lag", yaxis_title="ACF")
+        if df is not None:
+            # 1. Stats
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Rows", df.shape[0])
+            col2.metric("Columns", df.shape[1])
+            col3.metric("Missing Values", df.isna().sum().sum())
             
-            # PACF (Partial AutoCorrelation Function) - Direct correlation removing intermediate lags
-            pacf_values = sm.tsa.pacf(ts_values, nlags=20)
-            fig_pacf = px.bar(x=list(range(len(pacf_values))), y=pacf_values, title="Partial Autocorrelation (PACF)")
-            fig_pacf.update_layout(template="plotly_dark", xaxis_title="Lag", yaxis_title="PACF")
+            with st.expander("View Raw Data", expanded=False):
+                st.dataframe(df.head(100))
+                
+            # 2. Visuals
+            st.subheader("Visual Analytics")
+            
+            # Select target for distribution
+            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+            if numeric_cols:
+                target_col = st.selectbox("Select Column to Analyze Distribution", numeric_cols, index=0)
+                
+                c1, c2 = st.columns(2)
+                with c1:
+                    fig_hist = px.histogram(df, x=target_col, title=f"Distribution of {target_col}", nbins=30)
+                    st.plotly_chart(fig_hist, width='stretch')
+                
+                with c2:
+                    # Correlation Heatmap
+                    if len(numeric_cols) > 1:
+                        corr = df[numeric_cols].corr()
+                        fig_corr = px.imshow(corr, text_auto=True, color_continuous_scale='RdBu_r', title="Correlation Heatmap")
+                        st.plotly_chart(fig_corr, width='stretch')
+                    else:
+                        st.info("Not enough numeric columns for correlation.")
+            else:
+                st.warning("No numeric columns found for visualization.")
+
+            # Categorical bars
+            cat_cols = df.select_dtypes(include=['object']).columns.tolist()
+            if cat_cols:
+                st.subheader("Categorical Distributions")
+                selected_cat = st.selectbox("Select Categorical Column", cat_cols)
+                fig_bar = px.bar(df[selected_cat].value_counts().reset_index(), x=selected_cat, y='count', title=f"Count of {selected_cat}")
+                st.plotly_chart(fig_bar, width='stretch')
+                
+        else:
+            st.info("Please upload data or load a model with default data to view explorer.")
+
+    # --- Tab 2: AutoML Training Lab ---
+    with tab2:
+        st.header("⚙️ AutoML Training Lab")
+        
+        if data_source == "Train on New Data" and st.session_state.data_df is not None:
+            df = st.session_state.data_df
+            columns = df.columns.tolist()
             
             c1, c2 = st.columns(2)
-            c1.plotly_chart(fig_acf, width='stretch')
-            c2.plotly_chart(fig_pacf, width='stretch')
-        except Exception as e:
-            st.warning(f"ACF/PACF analysis failed: {e}")
-
-    # --- Tab 2: Model Arena ---
-    with tab2:
-        st.header("Model Arena")
-        st.markdown("Comparison of different machine learning models.")
-        
-        winner = "Unknown"
-        if leaderboard is not None and not leaderboard.empty:
-            winner = leaderboard.iloc[0]['Model_Type']
-        
-        st.info(f"🏆 Champion Model: **{winner}**")
-        
-        col1, col2 = st.columns([1, 1])
-        
-        with col1:
-            st.subheader("Leaderboard")
-            if leaderboard is not None:
-                st.dataframe(leaderboard.style.highlight_min(subset=['RMSE'], color='#00ADB5'), width='stretch')
-            else:
-                st.write("No leaderboard data.")
+            target_col = c1.selectbox("Select Target Column", columns, index=len(columns)-1 if 'Total' not in columns else columns.index('Total'))
+            time_budget = c2.slider("Time Budget (seconds)", 30, 600, 60)
             
-        with col2:
-            st.subheader("Global Feature Importance")
-            if feature_importance:
-                fi_df = pd.DataFrame(list(feature_importance.items()), columns=['Feature', 'Importance']).sort_values(by='Importance', ascending=False)
-                fig_fi = px.bar(fi_df, x='Importance', y='Feature', orientation='h', color='Importance', color_continuous_scale='Viridis', title="Top Drivers of Sales")
-                fig_fi.update_layout(template="plotly_dark")
-                st.plotly_chart(fig_fi, width='stretch')
-            else:
-                st.info("Feature importance not available for this model type.")
-
-        # Training History
-        st.subheader("Training History")
-        if os.path.exists("flaml.log"):
-            try:
-                # Parse FLAML log to show improvement over time
-                log_data = []
-                with open("flaml.log", "r") as f:
-                    import json
-                    for line in f:
-                        try:
-                            entry = json.loads(line)
-                            if 'curr_loss' in entry and 'wall_clock_time' in entry:
-                                log_data.append(entry)
-                        except:
-                            pass
+            if st.button("🚀 Start Training"):
+                st.info(f"Training AutoML model to predict '{target_col}'...")
                 
-                if log_data:
-                    hist_df = pd.DataFrame(log_data)
-                    fig_hist = px.line(hist_df, x='wall_clock_time', y='curr_loss', title="Loss Optimization over Time")
-                    fig_hist.update_layout(template="plotly_dark", xaxis_title="Time (s)", yaxis_title="RMSE")
-                    st.plotly_chart(fig_hist, width='stretch')
-                else:
-                    st.write("Log file empty or unreadable.")
-            except Exception as e:
-                st.write(f"Could not read training history: {e}")
+                # Progress bar
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                # Preprocessing
+                status_text.text("Preprocessing Data...")
+                progress_bar.progress(10)
+                
+                # Drop non-useful columns if they exist
+                drop_cols = [c for c in ['Invoice ID'] if c in df.columns]
+                X = df.drop(columns=[target_col] + drop_cols)
+                y = df[target_col]
+                
+                # Metadata
+                metadata = get_column_metadata(X)
+                
+                # Split
+                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+                
+                status_text.text(f"Running FLAML (Budget: {time_budget}s)...")
+                progress_bar.progress(30)
+                
+                # AutoML
+                automl = AutoML()
+                settings = {
+                    "time_budget": time_budget,
+                    "metric": 'r2',
+                    "task": 'regression',
+                    "verbose": 0
+                }
+                
+                start_time = time.time()
+                automl.fit(X_train=X_train, y_train=y_train, **settings)
+                
+                progress_bar.progress(90)
+                status_text.text("Evaluating Model...")
+                
+                # Metrics
+                y_pred = automl.predict(X_test)
+                r2 = r2_score(y_test, y_pred)
+                mae = mean_absolute_error(y_test, y_pred)
+                mse = mean_squared_error(y_test, y_pred)
+                
+                metrics = {'r2': r2, 'mae': mae, 'mse': mse}
+                
+                # Save to session
+                config = {'target': target_col, 'app_title': "Custom Trained Model"}
+                
+                # Bundle
+                artifacts = {
+                    'model': automl,
+                    'features': X.columns.tolist(),
+                    'column_metadata': metadata,
+                    'metrics': metrics,
+                    'config': config
+                }
+                
+                st.session_state.active_model = automl
+                st.session_state.active_meta = artifacts
+                
+                # Save to disk
+                save_model(automl, X.columns.tolist(), metadata, metrics, config)
+                
+                progress_bar.progress(100)
+                status_text.text("Training Complete!")
+                
+                st.success("Model Trained Successfully!")
+                
+                c1, c2, c3 = st.columns(3)
+                c1.metric("R² Score", f"{r2:.4f}")
+                c2.metric("MAE", f"{mae:.4f}")
+                c3.metric("RMSE", f"{np.sqrt(mse):.4f}")
+                
+        elif data_source == "Use Pre-trained Model":
+            st.warning("Switch to 'Train on New Data' in the sidebar to use this lab.")
+        else:
+            st.info("Please upload a dataset to start training.")
 
-    # --- Tab 3: Diagnostics ---
+    # --- Tab 3: Sales Simulator ---
     with tab3:
-        st.header("Diagnostics")
-        st.markdown("Detailed error analysis on the hold-out test set.")
+        st.header("🛒 Sales Simulator")
         
-        X_test, y_test = test_data
-        y_pred = automl.predict(X_test)
-        residuals = y_test.values - y_pred
-        
-        st.subheader("Actual vs Predicted (Test Set)")
-        fig_avp = go.Figure()
-        fig_avp.add_trace(go.Scatter(y=y_test.values, name='Actual', mode='lines', line=dict(color='#EEEEEE')))
-        fig_avp.add_trace(go.Scatter(y=y_pred, name='Predicted', mode='lines', line=dict(color='#00ADB5', dash='dot')))
-        fig_avp.update_layout(template="plotly_dark", title="Model Performance on Unseen Data")
-        st.plotly_chart(fig_avp, width='stretch')
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("Residual Histogram")
-            # Check for Gaussian distribution of errors
-            fig_hist = px.histogram(residuals, nbins=30, title="Error Distribution (Should be Gaussian)")
-            fig_hist.update_layout(template="plotly_dark", showlegend=False)
-            st.plotly_chart(fig_hist, width='stretch')
+        if st.session_state.active_model and st.session_state.active_meta:
+            artifacts = st.session_state.active_meta
+            model = st.session_state.active_model
+            features = artifacts['features']
+            metadata = artifacts['column_metadata']
+            target_name = artifacts['config'].get('target', 'Target')
             
-        with col2:
-            st.subheader("Residuals vs Predicted")
-            # Check for Homoscedasticity (Equal variance across predictions)
-            fig_res = px.scatter(x=y_pred, y=residuals, labels={'x': 'Predicted', 'y': 'Residuals'}, title="Homoscedasticity Check")
-            fig_res.add_hline(y=0, line_dash="dash", line_color="red")
-            fig_res.update_layout(template="plotly_dark")
-            st.plotly_chart(fig_res, width='stretch')
+            st.markdown(f"Predicting: **{target_name}**")
+            
+            # Dynamic Form
+            input_data = {}
+            with st.form("simulation_form"):
+                cols = st.columns(3) # Grid layout
+                for i, col_name in enumerate(features):
+                    col_info = metadata.get(col_name, {})
+                    col_type = col_info.get('type', 'unknown')
+                    
+                    with cols[i % 3]:
+                        if col_type == 'categorical':
+                            options = col_info.get('options', [])
+                            input_data[col_name] = st.selectbox(f"{col_name}", options)
+                        elif col_type == 'numeric':
+                            min_val = col_info.get('min', 0.0)
+                            max_val = col_info.get('max', 10000.0)
+                            mean_val = col_info.get('mean', 0.0)
+                            # Set default to mean
+                            input_data[col_name] = st.number_input(f"{col_name}", value=mean_val)
+                        else:
+                            input_data[col_name] = st.text_input(f"{col_name}")
+                
+                predict_btn = st.form_submit_button("Predict Sales")
+            
+            if predict_btn:
+                input_df = pd.DataFrame([input_data])
+                
+                try:
+                    prediction = model.predict(input_df)[0]
+                    st.metric("Predicted Value", f"{prediction:,.2f}")
+                    
+                    # Store for explanation
+                    st.session_state.last_prediction_input = input_df
+                    st.session_state.last_prediction_value = prediction
+                    
+                except Exception as e:
+                    st.error(f"Prediction Error: {e}")
+                    
+        else:
+            st.warning("No active model. Please load or train a model.")
 
-    # --- Tab 4: Future Forecast ---
+    # --- Tab 4: Model Explainability ---
     with tab4:
-        st.header("Future Forecast")
-        st.markdown("Generate predictions for future dates using recursive forecasting.")
+        st.header("🧠 Model Explainability")
         
-        days_to_forecast = st.slider("Days to Forecast", 1, 30, 7)
-        
-        if st.button("Generate Forecast"):
-            with st.spinner("Calculating future trajectories..."):
-                last_date = df_processed[processed_date_col].max()
+        if not SHAP_AVAILABLE:
+            st.error("SHAP library not found. Please install it to use this feature.")
+        elif st.session_state.active_model:
+            model = st.session_state.active_model
+            
+            # We need background data for SHAP
+            if st.session_state.data_df is not None:
+                df = st.session_state.data_df
+                # Preprocess same as training
+                target = st.session_state.active_meta['config'].get('target')
+                features = st.session_state.active_meta['features']
                 
-                # Setup for recursive prediction
-                future_preds = []
-                future_dates = [last_date + pd.Timedelta(days=i) for i in range(1, days_to_forecast + 1)]
-                
-                # Get the full history of the target to compute lags
-                history_target = df_processed[processed_target_col].tolist()
-                
-                # Get last row to pick up exogenous features (assuming constant for future)
-                last_row = df_processed.iloc[-1].to_dict()
-                
-                for date in future_dates:
-                    # 1. Date Features
-                    row = last_row.copy()
-                    row['DayOfWeek'] = date.dayofweek
-                    row['Month'] = date.month
-                    row['Day'] = date.day
-                    row['Year'] = date.year
+                # Check if features exist in df
+                if all(f in df.columns for f in features):
+                    X_background = df[features].head(100) # Use subset for speed
                     
-                    # 2. Lag Features (Recursive updates)
-                    # Lag_1 = T-1
-                    row['Lag_1'] = history_target[-1]
-                    # Lag_7 = T-7
-                    row['Lag_7'] = history_target[-7] if len(history_target) >= 7 else history_target[0]
-                    # Rolling_Mean_7
-                    row['Rolling_Mean_7'] = np.mean(history_target[-7:])
-                    
-                    # Construct DataFrame for prediction
-                    X_future = pd.DataFrame([row])[feature_cols]
-                    
-                    # Predict
-                    pred = automl.predict(X_future)[0]
-                    
-                    future_preds.append(pred)
-                    history_target.append(pred) # Append forecast to history for next iteration
-                
-                # Display Results
-                forecast_df = pd.DataFrame({'Date': future_dates, 'Forecast': future_preds})
-                
-                fig_cast = px.line(forecast_df, x='Date', y='Forecast', markers=True, title=f"Forecast for next {days_to_forecast} Days")
-                fig_cast.update_layout(template="plotly_dark")
-                
-                st.plotly_chart(fig_cast, width='stretch')
-                
-                st.write("Forecast Values:")
-                st.dataframe(forecast_df)
+                    # Initialize Explainer
+                    try:
+                        # Warning: SHAP with general function can be slow.
+                        # We limit background to 50 samples for speed.
+                        X_background_small = X_background.iloc[:50]
+                        
+                        # Handle Categorical Encoding for SHAP
+                        # SHAP needs numeric data to calculate perturbations/variance.
+                        cat_cols = X_background.select_dtypes(include=['object']).columns
+                        
+                        if len(cat_cols) > 0:
+                            # 1. Create Mappings
+                            encoders = {}
+                            X_bg_encoded = X_background_small.copy()
+                            
+                            for col in cat_cols:
+                                unique_vals = X_background[col].unique().tolist()
+                                # Map val -> int
+                                mapping = {val: i for i, val in enumerate(unique_vals)}
+                                # Store int -> val for decoding
+                                encoders[col] = {i: val for val, i in mapping.items()}
+                                # Apply mapping
+                                X_bg_encoded[col] = X_background_small[col].map(mapping).fillna(-1)
 
-else:
-    # Landing Page
-    st.info("👋 Welcome to the Research Lab. Please Upload Data or use Demo Data to start.")
-    if os.path.exists("supermarket_sales.csv"):
-        st.markdown("Found `supermarket_sales.csv`. Select 'Use Demo Data' in sidebar.")
+                            # 2. Create Wrapper
+                            def predict_wrapper(X_numeric):
+                                # X_numeric comes from SHAP as numpy or DataFrame
+                                if isinstance(X_numeric, np.ndarray):
+                                    X_temp = pd.DataFrame(X_numeric, columns=X_background.columns)
+                                else:
+                                    X_temp = X_numeric.copy()
+                                
+                                # Decode back to strings
+                                for col, mapping in encoders.items():
+                                    # Round to nearest integer (SHAP might produce floats)
+                                    # Map back. Use a default if not found (though shouldn't happen with background data)
+                                    X_temp[col] = X_temp[col].round().map(mapping)
+                                
+                                return model.predict(X_temp)
+                            
+                            # 3. Use Encoded Data with Wrapper
+                            explainer = shap.Explainer(predict_wrapper, X_bg_encoded)
+                            
+                            st.subheader("Global Feature Importance")
+                            with st.spinner("Calculating Global Importance (Beeswarm)..."):
+                                shap_values = explainer(X_bg_encoded)
+                                
+                                fig, ax = plt.subplots()
+                                shap.plots.beeswarm(shap_values, show=False)
+                                st.pyplot(fig)
+                                plt.close()
+                                
+                            # Local Explanation
+                            if 'last_prediction_input' in st.session_state:
+                                st.subheader("Local Explanation (Waterfall)")
+                                st.markdown("Explaining the most recent prediction from Tab 3.")
+                                
+                                input_row = st.session_state.last_prediction_input.copy()
+                                
+                                # Encode input_row using same encoders
+                                for col, mapping in encoders.items():
+                                    # We need the reverse mapping here (str -> int)
+                                    val_to_int = {v: k for k, v in mapping.items()}
+                                    input_row[col] = input_row[col].map(val_to_int).fillna(-1)
+
+                                # Calculate SHAP for single instance
+                                shap_single = explainer(input_row)
+                                
+                                fig2, ax2 = plt.subplots()
+                                shap.plots.waterfall(shap_single[0], show=False)
+                                st.pyplot(fig2)
+                                plt.close()
+                            else:
+                                st.info("Make a prediction in the 'Sales Simulator' tab to see local explanation.")
+
+                        else:
+                            # Numeric Only - simpler path
+                            explainer = shap.Explainer(model.predict, X_background_small)
+                            
+                            st.subheader("Global Feature Importance")
+                            with st.spinner("Calculating Global Importance (Beeswarm)..."):
+                                shap_values = explainer(X_background_small)
+                                
+                                fig, ax = plt.subplots()
+                                shap.plots.beeswarm(shap_values, show=False)
+                                st.pyplot(fig)
+                                plt.close()
+
+                            # Local Explanation
+                            if 'last_prediction_input' in st.session_state:
+                                st.subheader("Local Explanation (Waterfall)")
+                                st.markdown("Explaining the most recent prediction from Tab 3.")
+                                
+                                input_row = st.session_state.last_prediction_input
+                                shap_single = explainer(input_row)
+                                
+                                fig2, ax2 = plt.subplots()
+                                shap.plots.waterfall(shap_single[0], show=False)
+                                st.pyplot(fig2)
+                                plt.close()
+                            else:
+                                st.info("Make a prediction in the 'Sales Simulator' tab to see local explanation.")
+                            
+                    except Exception as e:
+                        st.error(f"Could not generate SHAP plots: {e}")
+                        st.warning("Note: SHAP explanation with AutoML pipelines can be complex due to internal preprocessing.")
+                else:
+                    st.warning("Loaded data does not match model features. Cannot run SHAP.")
+            else:
+                st.warning("No background data available for SHAP. Please upload the dataset used for training.")
+        else:
+             st.warning("No active model.")
+
+if __name__ == "__main__":
+    main()

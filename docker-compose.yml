@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: supermarket-sales-ai
+    ports:
+      - "8501:8501"
+    volumes:
+      # Mount the current directory to enable live code updates (optional, good for dev)
+      # and to persist generated models
+      - .:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
