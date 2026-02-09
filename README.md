@@ -38,7 +38,7 @@ A full-stack AI platform designed for retail analytics, forecasting, and automat
 
 ### Step 0: Clone the Repository
 ```bash
-git clone https://github.com/YOUR_USERNAME/Super-Market-Sales-Prediction.git
+git clone https://github.com/pypi-ahmad/Super-Market-Sales-Prediction.git
 cd Super-Market-Sales-Prediction
 ```
 
