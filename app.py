@@ -4,7 +4,8 @@ import numpy as np
 import plotly.express as px
 import os
 import pickle
-import time
+import hashlib
+import logging
 import matplotlib.pyplot as plt
 
 # Try importing SHAP, handle if missing
@@ -29,13 +30,29 @@ st.set_page_config(
 # Constants
 MODEL_FILE = 'automl_model.pkl'
 
+logger = logging.getLogger(__name__)
+
+
+def _model_hash_file():
+    return f"{MODEL_FILE}.sha256"
+
 # --- Helper Functions ---
 @st.cache_data
 def load_data(file):
-    if file.name.endswith('.csv'):
+    file_name = str(getattr(file, 'name', '')).lower()
+    if file_name.endswith('.csv'):
         return pd.read_csv(file)
-    else:
+    if file_name.endswith('.xlsx'):
         return pd.read_excel(file)
+    raise ValueError("Unsupported file type. Please upload a CSV or XLSX file.")
+
+
+def _compute_file_sha256(file_path):
+    hasher = hashlib.sha256()
+    with open(file_path, 'rb') as file_obj:
+        for chunk in iter(lambda: file_obj.read(8192), b''):
+            hasher.update(chunk)
+    return hasher.hexdigest()
 
 def get_column_metadata(df):
     """Generate metadata for dynamic inputs."""
@@ -65,11 +82,33 @@ def save_model(automl, features, metadata, metrics, config):
     }
     with open(MODEL_FILE, 'wb') as f:
         pickle.dump(artifacts, f)
+    with open(_model_hash_file(), 'w', encoding='utf-8') as hash_file:
+        hash_file.write(_compute_file_sha256(MODEL_FILE))
+    return artifacts
 
 def load_pretrained_model():
     if os.path.exists(MODEL_FILE):
-        with open(MODEL_FILE, 'rb') as f:
-            return pickle.load(f)
+        try:
+            model_hash_file = _model_hash_file()
+            if os.path.exists(model_hash_file):
+                with open(model_hash_file, 'r', encoding='utf-8') as hash_file:
+                    expected_hash = hash_file.read().strip()
+                if expected_hash != _compute_file_sha256(MODEL_FILE):
+                    logger.error("Model integrity check failed.")
+                    return None
+
+            with open(MODEL_FILE, 'rb') as f:
+                artifacts = pickle.load(f)
+
+            required_keys = {'model', 'features', 'column_metadata', 'metrics', 'config'}
+            if not isinstance(artifacts, dict) or not required_keys.issubset(artifacts.keys()):
+                logger.error("Model artifact structure is invalid.")
+                return None
+
+            return artifacts
+        except Exception as error:
+            logger.error(f"Failed to load pre-trained model: {error}")
+            return None
     return None
 
 # --- Main App ---
@@ -93,6 +132,8 @@ def main():
         st.session_state.active_meta = None
     if 'data_df' not in st.session_state:
         st.session_state.data_df = None
+    if 'uploaded_filename' not in st.session_state:
+        st.session_state.uploaded_filename = None
 
     # Logic based on Data Source
     if data_source == "Use Pre-trained Model":
@@ -114,11 +155,11 @@ def main():
         uploaded_file = st.sidebar.file_uploader("Upload Dataset (CSV/Excel)", type=['csv', 'xlsx'])
         if uploaded_file:
             try:
-                # Basic check to avoid reloading same file
-                if st.session_state.data_df is None:
-                     df = load_data(uploaded_file)
-                     st.session_state.data_df = df
-                     st.sidebar.success(f"Uploaded: {uploaded_file.name} ({len(df)} rows)")
+                if st.session_state.uploaded_filename != uploaded_file.name:
+                    df = load_data(uploaded_file)
+                    st.session_state.data_df = df
+                    st.session_state.uploaded_filename = uploaded_file.name
+                st.sidebar.success(f"Uploaded: {uploaded_file.name} ({len(st.session_state.data_df)} rows)")
             except Exception as e:
                 st.sidebar.error(f"Error loading file: {e}")
 
@@ -156,14 +197,14 @@ def main():
                 c1, c2 = st.columns(2)
                 with c1:
                     fig_hist = px.histogram(df, x=target_col, title=f"Distribution of {target_col}", nbins=30)
-                    st.plotly_chart(fig_hist, width='stretch')
+                    st.plotly_chart(fig_hist, use_container_width=True)
                 
                 with c2:
                     # Correlation Heatmap
                     if len(numeric_cols) > 1:
                         corr = df[numeric_cols].corr()
                         fig_corr = px.imshow(corr, text_auto=True, color_continuous_scale='RdBu_r', title="Correlation Heatmap")
-                        st.plotly_chart(fig_corr, width='stretch')
+                        st.plotly_chart(fig_corr, use_container_width=True)
                     else:
                         st.info("Not enough numeric columns for correlation.")
             else:
@@ -175,7 +216,7 @@ def main():
                 st.subheader("Categorical Distributions")
                 selected_cat = st.selectbox("Select Categorical Column", cat_cols)
                 fig_bar = px.bar(df[selected_cat].value_counts().reset_index(), x=selected_cat, y='count', title=f"Count of {selected_cat}")
-                st.plotly_chart(fig_bar, width='stretch')
+                st.plotly_chart(fig_bar, use_container_width=True)
                 
         else:
             st.info("Please upload data or load a model with default data to view explorer.")
@@ -188,9 +229,10 @@ def main():
             df = st.session_state.data_df
             columns = df.columns.tolist()
             
-            c1, c2 = st.columns(2)
+            c1, c2, c3 = st.columns(3)
             target_col = c1.selectbox("Select Target Column", columns, index=len(columns)-1 if 'Total' not in columns else columns.index('Total'))
             time_budget = c2.slider("Time Budget (seconds)", 30, 600, 60)
+            use_gpu = c3.checkbox("Use GPU", value=False)
             
             if st.button("🚀 Start Training"):
                 st.info(f"Training AutoML model to predict '{target_col}'...")
@@ -203,10 +245,36 @@ def main():
                 status_text.text("Preprocessing Data...")
                 progress_bar.progress(10)
                 
-                # Drop non-useful columns if they exist
-                drop_cols = [c for c in ['Invoice ID'] if c in df.columns]
-                X = df.drop(columns=[target_col] + drop_cols)
-                y = df[target_col]
+                if target_col not in df.columns:
+                    st.error(f"Target column '{target_col}' not found.")
+                    st.stop()
+
+                training_df = df.dropna(subset=[target_col]).copy()
+                if training_df.empty:
+                    st.error("No rows available after dropping missing target values.")
+                    st.stop()
+
+                leakage_cols = [
+                    'Invoice ID',
+                    'Tax 5%',
+                    'cogs',
+                    'gross income',
+                    'gross margin percentage',
+                    'Date',
+                    'Time'
+                ]
+                drop_cols = [c for c in leakage_cols if c in training_df.columns and c != target_col]
+
+                X = training_df.drop(columns=[target_col] + drop_cols)
+                y = training_df[target_col]
+
+                valid_rows = X.notna().all(axis=1) & y.notna()
+                X = X.loc[valid_rows]
+                y = y.loc[valid_rows]
+
+                if len(X) < 2:
+                    st.error("Not enough valid rows to train after removing missing values.")
+                    st.stop()
                 
                 # Metadata
                 metadata = get_column_metadata(X)
@@ -223,10 +291,11 @@ def main():
                     "time_budget": time_budget,
                     "metric": 'r2',
                     "task": 'regression',
-                    "verbose": 0
+                    "verbose": 0,
+                    "seed": 42,
+                    "use_gpu": use_gpu
                 }
                 
-                start_time = time.time()
                 automl.fit(X_train=X_train, y_train=y_train, **settings)
                 
                 progress_bar.progress(90)
@@ -243,20 +312,10 @@ def main():
                 # Save to session
                 config = {'target': target_col, 'app_title': "Custom Trained Model"}
                 
-                # Bundle
-                artifacts = {
-                    'model': automl,
-                    'features': X.columns.tolist(),
-                    'column_metadata': metadata,
-                    'metrics': metrics,
-                    'config': config
-                }
-                
-                st.session_state.active_model = automl
-                st.session_state.active_meta = artifacts
-                
                 # Save to disk
-                save_model(automl, X.columns.tolist(), metadata, metrics, config)
+                artifacts = save_model(automl, X.columns.tolist(), metadata, metrics, config)
+                st.session_state.active_model = artifacts['model']
+                st.session_state.active_meta = artifacts
                 
                 progress_bar.progress(100)
                 status_text.text("Training Complete!")
@@ -302,8 +361,22 @@ def main():
                             min_val = col_info.get('min', 0.0)
                             max_val = col_info.get('max', 10000.0)
                             mean_val = col_info.get('mean', 0.0)
-                            # Set default to mean
-                            input_data[col_name] = st.number_input(f"{col_name}", value=mean_val)
+                            if not np.isfinite(min_val):
+                                min_val = 0.0
+                            if not np.isfinite(max_val):
+                                max_val = min_val + 1.0
+                            if min_val > max_val:
+                                min_val, max_val = max_val, min_val
+                            default_val = mean_val
+                            if not np.isfinite(default_val):
+                                default_val = min_val
+                            default_val = min(max(default_val, min_val), max_val)
+                            input_data[col_name] = st.number_input(
+                                f"{col_name}",
+                                min_value=float(min_val),
+                                max_value=float(max_val),
+                                value=float(default_val)
+                            )
                         else:
                             input_data[col_name] = st.text_input(f"{col_name}")
                 
@@ -338,8 +411,6 @@ def main():
             # We need background data for SHAP
             if st.session_state.data_df is not None:
                 df = st.session_state.data_df
-                # Preprocess same as training
-                target = st.session_state.active_meta['config'].get('target')
                 features = st.session_state.active_meta['features']
                 
                 # Check if features exist in df
@@ -354,7 +425,7 @@ def main():
                         
                         # Handle Categorical Encoding for SHAP
                         # SHAP needs numeric data to calculate perturbations/variance.
-                        cat_cols = X_background.select_dtypes(include=['object']).columns
+                        cat_cols = X_background_small.select_dtypes(include=['object']).columns
                         
                         if len(cat_cols) > 0:
                             # 1. Create Mappings
@@ -362,27 +433,28 @@ def main():
                             X_bg_encoded = X_background_small.copy()
                             
                             for col in cat_cols:
-                                unique_vals = X_background[col].unique().tolist()
-                                # Map val -> int
-                                mapping = {val: i for i, val in enumerate(unique_vals)}
-                                # Store int -> val for decoding
-                                encoders[col] = {i: val for val, i in mapping.items()}
-                                # Apply mapping
-                                X_bg_encoded[col] = X_background_small[col].map(mapping).fillna(-1)
+                                unique_vals = X_background_small[col].dropna().unique().tolist()
+                                val_to_int = {val: i for i, val in enumerate(unique_vals)}
+                                int_to_val = {i: val for val, i in val_to_int.items()}
+                                fallback_value = unique_vals[0] if unique_vals else ""
+                                encoders[col] = {
+                                    'val_to_int': val_to_int,
+                                    'int_to_val': int_to_val,
+                                    'fallback': fallback_value
+                                }
+                                X_bg_encoded[col] = X_background_small[col].map(val_to_int).fillna(-1)
 
                             # 2. Create Wrapper
                             def predict_wrapper(X_numeric):
                                 # X_numeric comes from SHAP as numpy or DataFrame
                                 if isinstance(X_numeric, np.ndarray):
-                                    X_temp = pd.DataFrame(X_numeric, columns=X_background.columns)
+                                    X_temp = pd.DataFrame(X_numeric, columns=X_background_small.columns)
                                 else:
                                     X_temp = X_numeric.copy()
                                 
                                 # Decode back to strings
-                                for col, mapping in encoders.items():
-                                    # Round to nearest integer (SHAP might produce floats)
-                                    # Map back. Use a default if not found (though shouldn't happen with background data)
-                                    X_temp[col] = X_temp[col].round().map(mapping)
+                                for col, encoder in encoders.items():
+                                    X_temp[col] = X_temp[col].round().map(encoder['int_to_val']).fillna(encoder['fallback'])
                                 
                                 return model.predict(X_temp)
                             
@@ -406,10 +478,8 @@ def main():
                                 input_row = st.session_state.last_prediction_input.copy()
                                 
                                 # Encode input_row using same encoders
-                                for col, mapping in encoders.items():
-                                    # We need the reverse mapping here (str -> int)
-                                    val_to_int = {v: k for k, v in mapping.items()}
-                                    input_row[col] = input_row[col].map(val_to_int).fillna(-1)
+                                for col, encoder in encoders.items():
+                                    input_row[col] = input_row[col].map(encoder['val_to_int']).fillna(-1)
 
                                 # Calculate SHAP for single instance
                                 shap_single = explainer(input_row)

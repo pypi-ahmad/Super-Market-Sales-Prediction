@@ -1,4 +1,8 @@
 automl_model.pkl
+automl_model.pkl.sha256
+*.pkl
+*.sha256
+flaml.log
 *.csv
 .venv/
 __pycache__/
