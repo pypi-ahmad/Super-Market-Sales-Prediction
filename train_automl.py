@@ -5,6 +5,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 import logging
 import os
+import hashlib
 
 # Configuration
 DATA_SOURCE = "supermarket_sales.csv"
@@ -15,6 +16,18 @@ MODEL_FILE = 'automl_model.pkl'
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+
+def _compute_file_sha256(file_path):
+    hasher = hashlib.sha256()
+    with open(file_path, 'rb') as file_obj:
+        for chunk in iter(lambda: file_obj.read(8192), b''):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def _model_hash_file():
+    return f"{MODEL_FILE}.sha256"
 
 def main():
     print(f"--- {APP_TITLE} ---")
@@ -37,13 +50,37 @@ def main():
         logging.error(f"Target column '{TARGET}' not found in dataset.")
         return
 
-    # Basic cleanup: Drop irrelevant ID columns
-    if 'Invoice ID' in df.columns:
-        df = df.drop(columns=['Invoice ID'])
+    leakage_cols = [
+        'Invoice ID',
+        'Tax 5%',
+        'cogs',
+        'gross income',
+        'gross margin percentage',
+        'Date',
+        'Time'
+    ]
+    drop_cols = [column for column in leakage_cols if column in df.columns and column != TARGET]
+    df = df.drop(columns=drop_cols)
+
+    df = df.dropna(subset=[TARGET]).copy()
+    if df.empty:
+        logging.error("No rows available after dropping missing target values.")
+        return
 
     # Separate features and target
     X = df.drop(columns=[TARGET])
     y = df[TARGET]
+
+    valid_rows = X.notna().all(axis=1) & y.notna()
+    removed_rows = int((~valid_rows).sum())
+    if removed_rows > 0:
+        logging.warning(f"Dropped {removed_rows} rows with missing feature/target values.")
+    X = X.loc[valid_rows]
+    y = y.loc[valid_rows]
+
+    if len(X) < 2:
+        logging.error("Not enough valid rows to train after removing missing values.")
+        return
 
     # Capture column metadata for the App
     column_metadata = {}
@@ -75,7 +112,8 @@ def main():
         "task": 'regression',
         "log_file_name": 'flaml.log',
         "seed": 42,
-        "verbose": 1
+        "verbose": 1,
+        "use_gpu": os.getenv("USE_GPU", "0").strip() == "1"
     }
     
     logging.info(f"Starting AutoML training with time budget {TIME_BUDGET}s...")
@@ -109,6 +147,8 @@ def main():
 
     with open(MODEL_FILE, 'wb') as f:
         pickle.dump(artifacts, f)
+    with open(_model_hash_file(), 'w', encoding='utf-8') as hash_file:
+        hash_file.write(_compute_file_sha256(MODEL_FILE))
     logging.info(f"Model and artifacts saved to {MODEL_FILE}")
 
 if __name__ == "__main__":
