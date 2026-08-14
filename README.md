@@ -465,3 +465,5 @@ See [LICENSE](LICENSE) for details.
 
 Built with [Streamlit](https://streamlit.io/), [FLAML](https://microsoft.github.io/FLAML/), and [SHAP](https://shap.readthedocs.io/).
 
+
+<p align="center">Made with ❤️ by Ahmad Mujtaba</p>
